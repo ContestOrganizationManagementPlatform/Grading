@@ -1,0 +1,62 @@
+from pylatex import Document, Command, Package
+from pylatex.utils import NoEscape
+from datetime import date
+import os
+import requests
+import json
+
+BOX_LOCATION = "res/nobox"
+
+# Create a new document
+doc = Document()
+
+# Add the tikz package to the document
+doc.preamble.append(Package('tikz'))
+
+# Begin the document
+doc.append(NoEscape(r'\maketitle'))
+doc.append(NoEscape(r'\newcommand{\boxedtext}[1]{\tikz[baseline=(a.base)]\node[rectangle,draw,inner sep=2pt,minimum width=\textwidth,minimum height=1cm,line width=2pt] (a) {#1};}'))
+
+file = open('res/qr_data/text', 'r')
+info = eval(file.read())
+file.close()
+
+# Add a title to the document
+doc.preamble.append(Command('title', 'SMT Sample Test'))
+info = info["Name"] + ", Student ID: " + str(info["Student ID"])
+doc.preamble.append(Command('author', info))
+doc.preamble.append(Command('date', date.today()))  # If you want to include the date, add it here
+
+files = os.listdir(BOX_LOCATION)
+files.sort(key = lambda x: int(x[:x.find(".")]))
+# Add sections and subsections with colored boxes
+for file in files: 
+    number = file[:file.find(".")]
+    r = requests.post("https://api.mathpix.com/v3/text",
+        files={"file": open(f'{BOX_LOCATION}/{file}',"rb")},
+        data={
+        "options_json": json.dumps({
+            "math_inline_delimiters": ["", ""],
+            "rm_spaces": True,
+            "format": "text",
+        })
+        },
+        headers={
+            "app_id": "smt_cc13ae",
+            "app_key": "68782ef16a9ae6bd7da377572399f6bc972aa101b851035371bc8409f49d8a1e"
+        }
+    )
+
+    doc.append(NoEscape("\large"))
+    text = ""
+    try:
+        if json.loads(json.dumps(r.json(), indent=4, sort_keys=True))["confidence"] > 0.75:
+            text = NoEscape("$" + json.loads(json.dumps(r.json(), indent=4, sort_keys=True))["text"] + "$")
+    except KeyError:
+        pass
+    doc.append(f'Question {number}: ')
+    doc.append(text)
+    doc.append(NoEscape(r"\\ \par"))
+
+# Save the document to a file
+doc.generate_pdf('res/latex', clean_tex=True)
